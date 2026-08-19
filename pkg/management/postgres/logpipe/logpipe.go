@@ -42,6 +42,7 @@ import (
 // LogPipe creates a pipe for a given file
 type LogPipe struct {
 	fileName        string
+	writer          RecordWriter
 	record          CSVRecordParser
 	fieldsValidator FieldsValidator
 
@@ -56,9 +57,10 @@ var tagRegex = regexp.MustCompile(`(?s)(?P<Tag>^[a-zA-Z]+): (?P<Record>.*)$`)
 type FieldsValidator func(int) *ErrFieldCountExtended
 
 // NewLogPipe returns a new LogPipe
-func NewLogPipe() *LogPipe {
+func NewLogPipe(writers ...RecordWriter) *LogPipe {
 	return &LogPipe{
 		fileName:        filepath.Join(postgres.LogPath, postgres.LogFileName+".csv"),
+		writer:          NewWriteToAll(append(writers, &LogRecordWriter{})),
 		record:          NewPgAuditLoggingDecorator(),
 		fieldsValidator: LogFieldValidator,
 
@@ -157,7 +159,7 @@ func (p *LogPipe) collectLogsFromFile(ctx context.Context) error {
 	// the cancellation signal happened
 	go func() {
 		defer close(errChan)
-		errChan <- p.streamLogFromCSVFile(ctx, f, &LogRecordWriter{})
+		errChan <- p.streamLogFromCSVFile(ctx, f, p.writer)
 	}()
 	select {
 	case <-ctx.Done():
