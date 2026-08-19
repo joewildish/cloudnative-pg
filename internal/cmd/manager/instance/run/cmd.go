@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cloudnative-pg/cloudnative-pg/pkg/management/postgres/logsend"
 	"github.com/cloudnative-pg/machinery/pkg/log"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -311,6 +312,13 @@ func runSubCommand( //nolint: gocyclo,gocognit
 		return err
 	}
 
+	// send logs to plugins
+	sender := logsend.NewLogSender(mgr, instance, pluginRepository)
+	if err := mgr.Add(sender); err != nil {
+		contextLogger.Error(err, "unable to add log sender")
+		return err
+	}
+
 	// postgres CSV logs handler (PGAudit too)
 	postgresLogPipe := logpipe.NewLogPipe()
 	if err := mgr.Add(postgresLogPipe); err != nil {
@@ -321,8 +329,10 @@ func runSubCommand( //nolint: gocyclo,gocognit
 	exitedConditions = append(exitedConditions, postgresLogPipe.GetExitedCondition())
 
 	// raw logs handler
-	rawPipe := logpipe.NewRawLineLogPipe(filepath.Join(pg.LogPath, pg.LogFileName),
-		logpipe.LoggingCollectorRecordName)
+	rawFile := filepath.Join(pg.LogPath, pg.LogFileName)
+	rawLogr := log.WithName("postgres").WithValues("source", rawFile)
+	rawPipe := logpipe.NewRawLineLogPipe(rawFile,
+		logpipe.LoggerLineHandler(rawLogr))
 	if err := mgr.Add(rawPipe); err != nil {
 		contextLogger.Error(err, "unable to add raw logs handler")
 		return err
@@ -331,7 +341,11 @@ func runSubCommand( //nolint: gocyclo,gocognit
 	exitedConditions = append(exitedConditions, rawPipe.GetExitedCondition())
 
 	// json logs handler
-	jsonPipe := logpipe.NewJSONLineLogPipe(filepath.Join(pg.LogPath, pg.LogFileName+".json"))
+	jsonFile := filepath.Join(pg.LogPath, pg.LogFileName+".json")
+	jsonPipe := logpipe.NewJSONLineLogPipe(jsonFile,
+		logpipe.StdoutLineHandler,
+		logpipe.ChannelLineHandler(sender.JSON()),
+	)
 	if err := mgr.Add(jsonPipe); err != nil {
 		contextLogger.Error(err, "unable to add JSON logs handler")
 		return err

@@ -850,7 +850,6 @@ func (instance *Instance) WithActiveInstance(inner func() error) error {
 
 	rawPipe := logpipe.NewRawLineLogPipe(
 		filepath.Join(postgres.LogPath, postgres.LogFileName),
-		logpipe.LoggingCollectorRecordName,
 	)
 	go func() {
 		if err := rawPipe.Start(ctx); err != nil {

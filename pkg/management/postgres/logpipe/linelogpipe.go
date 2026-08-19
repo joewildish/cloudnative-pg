@@ -23,6 +23,7 @@ package logpipe
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,12 +38,40 @@ import (
 	"github.com/cloudnative-pg/cloudnative-pg/pkg/concurrency"
 )
 
-type lineHandler func(line []byte)
+type LineHandler func(line []byte)
+
+// StdoutLineHandler emits the log line to stdout
+func StdoutLineHandler(line []byte) {
+	fmt.Println(string(line))
+}
+
+// LoggerLineHandler emits the log line into logger.Info
+func LoggerLineHandler(logger log.Logger) LineHandler {
+	return func(line []byte) {
+		logger.Info(string(line))
+	}
+}
+
+// ChannelLineHandler emits the log line into the channel
+func ChannelLineHandler(ch chan<- []byte) LineHandler {
+	return func(line []byte) {
+		ch <- line
+	}
+}
+
+// invoke each given handler in turn
+func invoke(handlers ...LineHandler) LineHandler {
+	return func(line []byte) {
+		for _, handle := range handlers {
+			handle(line)
+		}
+	}
+}
 
 // LineLogPipe a pipe for a given format
 type LineLogPipe struct {
 	fileName string
-	handler  lineHandler
+	handler  LineHandler
 
 	initialized *concurrency.Executed
 	exited      *concurrency.Executed
@@ -61,28 +90,20 @@ func (p *LineLogPipe) GetExitedCondition() *concurrency.Executed {
 }
 
 // NewJSONLineLogPipe returns a logPipe for json format
-func NewJSONLineLogPipe(fileName string) *LineLogPipe {
+func NewJSONLineLogPipe(fileName string, handlers ...LineHandler) *LineLogPipe {
 	return &LineLogPipe{
-		fileName: fileName,
-		handler: func(line []byte) {
-			fmt.Println(string(line))
-		},
+		fileName:    fileName,
+		handler:     invoke(handlers...),
 		initialized: concurrency.NewExecuted(),
 		exited:      concurrency.NewExecuted(),
 	}
 }
 
 // NewRawLineLogPipe returns a logPipe for raw output
-func NewRawLineLogPipe(fileName, name string) *LineLogPipe {
-	logger := log.WithName(name).WithValues("source", fileName)
-
+func NewRawLineLogPipe(fileName string, handlers ...LineHandler) *LineLogPipe {
 	return &LineLogPipe{
-		fileName: fileName,
-		handler: func(line []byte) {
-			if len(line) != 0 {
-				logger.Info(string(line))
-			}
-		},
+		fileName:    fileName,
+		handler:     invoke(handlers...),
 		initialized: concurrency.NewExecuted(),
 		exited:      concurrency.NewExecuted(),
 	}
@@ -192,7 +213,10 @@ func (p *LineLogPipe) streamLogFromFile(ctx context.Context, reader io.Reader) e
 	scanner.Buffer(make([]byte, 0, 4096), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		p.handler(line)
+		if len(line) > 0 {
+			// Handlers may use go routines so send a copy.
+			p.handler(bytes.Clone(line))
+		}
 	}
 
 	// If the read timed out probably the channel has been cancelled

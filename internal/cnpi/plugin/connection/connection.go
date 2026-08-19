@@ -29,6 +29,7 @@ import (
 	"github.com/cloudnative-pg/cnpg-i/pkg/backup"
 	"github.com/cloudnative-pg/cnpg-i/pkg/identity"
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
+	"github.com/cloudnative-pg/cnpg-i/pkg/logs"
 	"github.com/cloudnative-pg/cnpg-i/pkg/metrics"
 	"github.com/cloudnative-pg/cnpg-i/pkg/operator"
 	postgresClient "github.com/cloudnative-pg/cnpg-i/pkg/postgres"
@@ -67,6 +68,7 @@ type Interface interface {
 	RestoreJobHooksClient() restore.RestoreJobHooksClient
 	PostgresClient() postgresClient.PostgresClient
 	MetricsClient() metrics.MetricsClient
+	LogsClient() logs.LogsClient
 
 	PluginCapabilities() []identity.PluginCapability_Service_Type
 	OperatorCapabilities() []operator.OperatorCapability_RPC_Type
@@ -77,6 +79,7 @@ type Interface interface {
 	RestoreJobHooksCapabilities() []restore.RestoreJobHooksCapability_Kind
 	PostgresCapabilities() []postgresClient.PostgresCapability_RPC_Type
 	MetricsCapabilities() []metrics.MetricsCapability_RPC_Type
+	LogsCapabilities() []logs.LogsCapability_RPC_Type
 
 	Ping(ctx context.Context) error
 	Close() error
@@ -93,6 +96,7 @@ type data struct {
 	restoreJobHooksClient restore.RestoreJobHooksClient
 	postgresClient        postgresClient.PostgresClient
 	metricsClient         metrics.MetricsClient
+	logsClient            logs.LogsClient
 
 	name                        string
 	version                     string
@@ -105,6 +109,7 @@ type data struct {
 	restoreJobHooksCapabilities []restore.RestoreJobHooksCapability_Kind
 	postgresCapabilities        []postgresClient.PostgresCapability_RPC_Type
 	metricsCapabilities         []metrics.MetricsCapability_RPC_Type
+	logsCapabilities            []logs.LogsCapability_RPC_Type
 }
 
 func newPluginDataFromConnection(ctx context.Context, connection Handler) (data, error) {
@@ -134,6 +139,7 @@ func newPluginDataFromConnection(ctx context.Context, connection Handler) (data,
 		restoreJobHooksClient: restore.NewRestoreJobHooksClient(connection),
 		postgresClient:        postgresClient.NewPostgresClient(connection),
 		metricsClient:         metrics.NewMetricsClient(connection),
+		logsClient:            logs.NewLogsClient(connection),
 	}
 
 	return result, err
@@ -318,6 +324,27 @@ func (pluginData *data) loadMetricsCapabilities(ctx context.Context) error {
 	return nil
 }
 
+func (pluginData *data) loadLogsCapabilities(ctx context.Context) error {
+	var logsCapabilitiesResponse *logs.LogsCapabilitiesResult
+	var err error
+
+	if logsCapabilitiesResponse, err = pluginData.logsClient.GetCapabilities(
+		ctx,
+		&logs.LogsCapabilitiesRequest{},
+	); err != nil {
+		return fmt.Errorf("while querying plugin logs capabilities: %w", err)
+	}
+
+	pluginData.logsCapabilities = make(
+		[]logs.LogsCapability_RPC_Type,
+		len(logsCapabilitiesResponse.Capabilities))
+	for i := range pluginData.logsCapabilities {
+		pluginData.logsCapabilities[i] = logsCapabilitiesResponse.Capabilities[i].GetRpc().Type
+	}
+
+	return nil
+}
+
 // Metadata extracts the plugin metadata reading from
 // the internal metadata
 func (pluginData *data) Metadata() Metadata {
@@ -396,6 +423,10 @@ func (pluginData *data) MetricsClient() metrics.MetricsClient {
 	return pluginData.metricsClient
 }
 
+func (pluginData *data) LogsClient() logs.LogsClient {
+	return pluginData.logsClient
+}
+
 func (pluginData *data) PluginCapabilities() []identity.PluginCapability_Service_Type {
 	return pluginData.capabilities
 }
@@ -430,6 +461,10 @@ func (pluginData *data) PostgresCapabilities() []postgresClient.PostgresCapabili
 
 func (pluginData *data) MetricsCapabilities() []metrics.MetricsCapability_RPC_Type {
 	return pluginData.metricsCapabilities
+}
+
+func (pluginData *data) LogsCapabilities() []logs.LogsCapability_RPC_Type {
+	return pluginData.logsCapabilities
 }
 
 func (pluginData *data) Ping(ctx context.Context) error {
@@ -510,6 +545,14 @@ func LoadPlugin(ctx context.Context, handler Handler) (Interface, error) {
 	// capabilities
 	if slices.Contains(result.capabilities, identity.PluginCapability_Service_TYPE_METRICS) {
 		if err = result.loadMetricsCapabilities(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	// If the plugin implements the logs service, load its
+	// capabilities
+	if slices.Contains(result.capabilities, identity.PluginCapability_Service_TYPE_LOGS) {
+		if err = result.loadLogsCapabilities(ctx); err != nil {
 			return nil, err
 		}
 	}
