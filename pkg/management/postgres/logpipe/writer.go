@@ -40,3 +40,17 @@ type LogRecordWriter struct{}
 func (writer *LogRecordWriter) Write(record NamedRecord) {
 	log.WithName(record.GetName()).Info(logRecordKey, logRecordKey, record)
 }
+
+type writeToAll struct {
+	writers []RecordWriter
+}
+
+func NewWriteToAll(writers []RecordWriter) RecordWriter {
+	return &writeToAll{writers}
+}
+
+func (writer *writeToAll) Write(record NamedRecord) {
+	for _, w := range writer.writers {
+		w.Write(record)
+	}
+}

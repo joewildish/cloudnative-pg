@@ -26,6 +26,7 @@ import (
 	"github.com/cloudnative-pg/cnpg-i/pkg/backup"
 	"github.com/cloudnative-pg/cnpg-i/pkg/identity"
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
+	"github.com/cloudnative-pg/cnpg-i/pkg/logs"
 	"github.com/cloudnative-pg/cnpg-i/pkg/metrics"
 	"github.com/cloudnative-pg/cnpg-i/pkg/operator"
 	postgresClient "github.com/cloudnative-pg/cnpg-i/pkg/postgres"
@@ -125,6 +126,18 @@ func (f *fakeConnection) GetMetricsDefinitions(context.Context, k8client.Object)
 }
 
 func (f *fakeConnection) CollectMetrics(context.Context, k8client.Object) ([]*metrics.CollectMetric, error) {
+	panic("implement me")
+}
+
+func (f *fakeConnection) LogsClient() logs.LogsClient {
+	panic("implement me")
+}
+
+func (f *fakeConnection) LogsCapabilities() []logs.LogsCapability_RPC_Type {
+	panic("implement me")
+}
+
+func (f *fakeConnection) Start(context.Context, k8client.Object) error {
 	panic("implement me")
 }
 

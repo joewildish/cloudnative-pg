@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cloudnative-pg/cloudnative-pg/pkg/management/postgres/logsend"
 	"github.com/cloudnative-pg/machinery/pkg/log"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -311,8 +312,15 @@ func runSubCommand( //nolint: gocyclo,gocognit
 		return err
 	}
 
+	// send logs to plugins
+	sender := logsend.NewLogSender(mgr, instance, pluginRepository)
+	if err := mgr.Add(sender); err != nil {
+		contextLogger.Error(err, "unable to add log sender")
+		return err
+	}
+
 	// postgres CSV logs handler (PGAudit too)
-	postgresLogPipe := logpipe.NewLogPipe()
+	postgresLogPipe := logpipe.NewLogPipe(sender)
 	if err := mgr.Add(postgresLogPipe); err != nil {
 		contextLogger.Error(err, "unable to add CSV logs handler")
 		return err
