@@ -51,11 +51,20 @@ func (p *proxy) Start(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (p *proxy) Send(log ServerLog) error {
+func (p *proxy) SendServerLog(log ServerLog) error {
 	var errs []error
 
 	for _, cl := range p.clients {
-		errs = append(errs, cl.Send(log))
+		errs = append(errs, cl.SendServerLog(log))
+	}
+	return errors.Join(errs...)
+}
+
+func (p *proxy) SendAuditLog(log AuditLog) error {
+	var errs []error
+
+	for _, cl := range p.clients {
+		errs = append(errs, cl.SendAuditLog(log))
 	}
 	return errors.Join(errs...)
 }

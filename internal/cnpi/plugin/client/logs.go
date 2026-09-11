@@ -21,6 +21,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/cloudnative-pg/cloudnative-pg/internal/cnpi/plugin/stream"
@@ -30,51 +31,78 @@ import (
 )
 
 type LogsCapabilities interface {
-	SendLogs(ctx context.Context) stream.StreamingClient
+	UploadServerLogs(ctx context.Context) stream.StreamingClient
+	UploadAuditLogs(ctx context.Context) stream.StreamingClient
 }
 
-func (data *data) SendLogs(ctx context.Context) stream.StreamingClient {
-	clients := data.openStreamingClients(ctx, sendCSVLogs)
-
-	return stream.NewStreamingClientProxy(clients...)
-}
-
-type streamOpener func(ctx context.Context, client logs.LogsClient) (grpc.ClientStreamingClient[logs.SendLogsRequest, logs.SendLogsResult], error)
-
-func sendCSVLogs(ctx context.Context, client logs.LogsClient) (grpc.ClientStreamingClient[logs.SendLogsRequest, logs.SendLogsResult], error) {
-	return client.SendLogs(ctx)
-}
-
-func (data *data) openStreamingClients(ctx context.Context, opener streamOpener) []stream.StreamingClient {
+func (data *data) UploadServerLogs(ctx context.Context) stream.StreamingClient {
 	var clients []stream.StreamingClient
 
 	for idx := range data.plugins {
 		plugin := data.plugins[idx]
 		logger := log.FromContext(ctx).WithValues("plugin", plugin.Name())
 
-		if !slices.Contains(plugin.LogsCapabilities(), logs.LogsCapability_RPC_TYPE_CSV_LOGS) {
-			logger.Debug("skipping plugin; no logs capability")
-			continue
+		if slices.Contains(plugin.LogsCapabilities(), logs.LogsCapability_RPC_TYPE_SERVER_LOGS) {
+			grpcClient, err := plugin.LogsClient().UploadServerLogs(ctx)
+			if err != nil {
+				logger.Error(err, "failed to open streaming client")
+				continue
+			}
+			rpc := &streamingRPC{
+				hasServerLogCapability: true,
+				serverLogs:             grpcClient,
+			}
+			clients = append(clients, stream.NewStreamingClient(rpc))
 		}
-
-		grpcClient, err := opener(ctx, plugin.LogsClient())
-		if err != nil {
-			logger.Error(err, "failed to open streaming client")
-			continue
-		}
-
-		clients = append(clients, stream.NewStreamingClient(&streamingRPC{grpcClient}))
 	}
 
-	return clients
+	return stream.NewStreamingClientProxy(clients...)
+}
+
+func (data *data) UploadAuditLogs(ctx context.Context) stream.StreamingClient {
+	var clients []stream.StreamingClient
+
+	for idx := range data.plugins {
+		plugin := data.plugins[idx]
+		logger := log.FromContext(ctx).WithValues("plugin", plugin.Name())
+
+		if slices.Contains(plugin.LogsCapabilities(), logs.LogsCapability_RPC_TYPE_AUDIT_LOGS) {
+			grpcClient, err := plugin.LogsClient().UploadAuditLogs(ctx)
+			if err != nil {
+				logger.Error(err, "failed to open streaming client")
+				continue
+			}
+			rpc := &streamingRPC{
+				hasAuditLogCapability: true,
+				auditLogs:             grpcClient,
+			}
+			clients = append(clients, stream.NewStreamingClient(rpc))
+		}
+	}
+
+	return stream.NewStreamingClientProxy(clients...)
 }
 
 type streamingRPC struct {
-	client grpc.ClientStreamingClient[logs.SendLogsRequest, logs.SendLogsResult]
+	hasServerLogCapability bool
+	hasAuditLogCapability  bool
+
+	serverLogs grpc.ClientStreamingClient[logs.UploadServerLogsRequest, logs.UploadServerLogsResult]
+	auditLogs  grpc.ClientStreamingClient[logs.UploadAuditLogsRequest, logs.UploadAuditLogsResult]
 }
 
-func (s streamingRPC) Send(entries []*logs.SendLogsRequest_Entry) error {
-	return s.client.Send(&logs.SendLogsRequest{Entries: entries})
+func (s streamingRPC) UploadServerLogs(entries []*logs.UploadServerLogsRequest_Entry) error {
+	if s.hasServerLogCapability {
+		return s.serverLogs.Send(&logs.UploadServerLogsRequest{Entries: entries})
+	}
+	return errors.New("server logs capability not enabled")
+}
+
+func (s streamingRPC) UploadAuditLogs(entries []*logs.UploadAuditLogsRequest_Entry) error {
+	if s.hasAuditLogCapability {
+		return s.auditLogs.Send(&logs.UploadAuditLogsRequest{Entries: entries})
+	}
+	return errors.New("audit logs capability not enabled")
 }
 
 func (s streamingRPC) Close() error {

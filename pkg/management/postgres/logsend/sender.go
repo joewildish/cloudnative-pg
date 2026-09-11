@@ -87,12 +87,17 @@ func (s *sender) Start(ctx context.Context) error {
 	}
 	defer cli.Close(ctx)
 
-	server := cli.SendLogs(ctx)
-	g.Go(func() error { return server.Start(ctx) })
-	g.Go(func() error { return chan2stream(ctx, s.logging, NewServerLog, server.Send) })
-
-	defer server.Close(ctx)
+	serverLogs := cli.UploadServerLogs(ctx)
+	defer serverLogs.Close(ctx)
 	defer close(s.logging)
+	g.Go(func() error { return serverLogs.Start(ctx) })
+	g.Go(func() error { return chan2stream(ctx, s.logging, NewServerLog, serverLogs.SendServerLog) })
+
+	auditLogs := cli.UploadAuditLogs(ctx)
+	defer auditLogs.Close(ctx)
+	defer close(s.pgAudit)
+	g.Go(func() error { return auditLogs.Start(ctx) })
+	g.Go(func() error { return chan2stream(ctx, s.pgAudit, NewAuditLog, auditLogs.SendAuditLog) })
 
 	return g.Wait()
 }

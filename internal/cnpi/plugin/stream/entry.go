@@ -1,34 +1,42 @@
 package stream
 
 type ServerLog struct {
-	LogTime              *int64
-	UserName             *string
-	DatabaseName         *string
-	ProcessId            *int32
-	ConnectionFrom       *string
-	SessionId            *string
-	SessionLineNum       *int64
-	CommandTag           *string
-	SessionStartTime     *int64
-	VirtualTransactionId *string
-	TransactionId        *int64
-	ErrorSeverity        *string
-	SqlStateCode         *string
-	Message              *string
-	Detail               *string
-	Hint                 *string
-	InternalQuery        *string
-	InternalQueryPos     *int32
-	Context              *string
-	Query                *string
-	QueryPos             *int32
-	Location             *string
-	ApplicationName      *string
-	BackendType          *string
-	LeaderPid            *int32
-	QueryId              *int64
+	LogTime              string
+	UserName             string
+	DatabaseName         string
+	ProcessId            string
+	ConnectionFrom       string
+	SessionId            string
+	SessionLineNum       string
+	CommandTag           string
+	SessionStartTime     string
+	VirtualTransactionId string
+	TransactionId        string
+	ErrorSeverity        string
+	SqlStateCode         string
+	Message              string
+	Detail               string
+	Hint                 string
+	InternalQuery        string
+	InternalQueryPos     string
+	Context              string
+	Query                string
+	QueryPos             string
+	Location             string
+	ApplicationName      string
+	BackendType          string
+	LeaderPid            string
+	QueryId              string
 }
 
 type AuditLog struct {
-	SomethingElse *string
+	AuditType      string
+	StatementID    string
+	SubstatementID string
+	Class          string
+	Command        string
+	ObjectType     string
+	ObjectName     string
+	Statement      string
+	Parameter      string
 }
